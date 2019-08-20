@@ -5,9 +5,6 @@
 import requests, re, random, json
 import time, aiohttp, asyncio
 from lxml import etree
-import multiprocessing as mp
-from bs4 import BeautifulSoup
-from urllib.request import urljoin
 
 
 
@@ -98,22 +95,16 @@ class stockX_all_data_spider():
                                 information_dict['lastSale'] = children_dict[i]['market']['lastSale']  # 最后报价
                                 information_dict['lowestAsk'] = children_dict[i]['market']['lowestAsk']  # 最低售价
                                 information_dict['deadstockSold'] = children_dict[i]['market']['deadstockSold']  # 销售量
-
-                                print(information_dict)
+                                if information_dict['size'] is None:
+                                    print(product_url)
 
                                 with open('StockXdata.json', 'a') as f:
                                     f.write(json.dumps(information_dict))
                                     f.write('\n')
 
+                                asyncio.sleep(random.randint(2, 6))
+
                 asyncio.sleep(random.randint(2, 6))
-
-
-
-
-
-
-
-
 
 
 
