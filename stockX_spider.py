@@ -2,7 +2,7 @@
 #-*- coding: UTF-8 -*-
 
 
-import requests, re, random
+import requests, re, random, json
 import time, aiohttp, asyncio
 from lxml import etree
 import multiprocessing as mp
@@ -42,6 +42,8 @@ class stockX_all_data_spider():
 
         self.url_lst_failed = []
 
+        self.product_detailspage_url_list = []
+
 
 
     def get_The_child_links(self):
@@ -66,7 +68,7 @@ class stockX_all_data_spider():
 
             proxy = random.choice(self.Ip_pool)
 
-            async with session.get(url, headers=self.stockX_headers, verify_ssl=False, proxy='http://' + proxy,) as resp:
+            async with session.get(url, headers=self.stockX_headers, verify_ssl=False, proxy='http://' + proxy) as resp:
 
                 if resp.status != 200:
                     self.url_lst_failed.append(url)
@@ -78,9 +80,30 @@ class stockX_all_data_spider():
                 product_href_list = etree.HTML(r).xpath('//*[@id="products-container"]/div[2]/div[2]/div/div/a/@href')
 
                 for i in product_href_list:
-                    product_url = 'https://stockx.com/' + i
+                    product_url = 'https://stockx.com/api/products' + str(i) + '?includes=market,360&currency=USD'
 
-                    print(product_url)
+                    async with aiohttp.ClientSession() as session1:
+
+                        async with session1.get(product_url, headers=self.stockX_headers, verify_ssl=False, proxy='http://' + proxy) as reql:
+
+                            rp = await reql.text()
+
+                            detal_page_information = json.loads(rp)
+
+                            children_dict = detal_page_information['Product']['children']
+
+                            for i, j in children_dict.items():
+                                information_dict = {}
+                                information_dict['size'] = children_dict[i]['market']['lastSaleSize']  # 鞋码
+                                information_dict['lastSale'] = children_dict[i]['market']['lastSale']  # 最后报价
+                                information_dict['lowestAsk'] = children_dict[i]['market']['lowestAsk']  # 最低售价
+                                information_dict['deadstockSold'] = children_dict[i]['market']['deadstockSold']  # 销售量
+
+                                print(information_dict)
+
+                                with open('StockXdata.json', 'a') as f:
+                                    f.write(json.dumps(information_dict))
+                                    f.write('\n')
 
                 asyncio.sleep(random.randint(2, 6))
 
