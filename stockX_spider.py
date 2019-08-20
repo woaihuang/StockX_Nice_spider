@@ -78,6 +78,7 @@ class stockX_all_data_spider():
 
                 for i in product_href_list:
                     product_url = 'https://stockx.com/api/products' + str(i) + '?includes=market,360&currency=USD'
+                    print(product_url)
 
                     async with aiohttp.ClientSession() as session1:
 
@@ -91,12 +92,15 @@ class stockX_all_data_spider():
 
                             for i, j in children_dict.items():
                                 information_dict = {}
-                                information_dict['size'] = children_dict[i]['market']['lastSaleSize']  # 鞋码
-                                information_dict['lastSale'] = children_dict[i]['market']['lastSale']  # 最后报价
-                                information_dict['lowestAsk'] = children_dict[i]['market']['lowestAsk']  # 最低售价
-                                information_dict['deadstockSold'] = children_dict[i]['market']['deadstockSold']  # 销售量
-                                if information_dict['size'] is None:
-                                    print(product_url)
+                                information_dict['title'] = children_dict[i]['title']                                                                                        #商品名称
+                                information_dict['sku'] = children_dict[i]['styleId']                                                                                      #商品sku
+                                information_dict['size'] = children_dict[i]['shoeSize']                                                                                    #鞋码
+                                information_dict['lastSale'] = children_dict[i]['market']['lastSale']                                                                   #最后报价
+                                information_dict['lowestAsk'] = children_dict[i]['market']['lowestAsk']                                                              #最低售价
+                                information_dict['deadstockSold'] = children_dict[i]['market']['deadstockSold']                                                     #销售量
+                                information_dict['pricePremium'] = str(round(float(children_dict[i]['market']['pricePremium']) * 100, 1)) + '%'          #超过原始零售价价格溢涨
+                                information_dict['averageDeadstockPrice'] = children_dict[i]['market']['averageDeadstockPrice']                                #平均销售价格
+                                information_dict['retailPrice'] = children_dict[i]['market']['retailPrice']                                                             #零售价格
 
                                 with open('StockXdata.json', 'a') as f:
                                     f.write(json.dumps(information_dict))
