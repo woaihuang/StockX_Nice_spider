@@ -3,75 +3,328 @@
 
 
 
-from qiniu import Auth, put_file, etag
-import requests, pymysql
+from multiprocessing.dummy import Pool as ThreadPool
+import requests, pymysql, random, redis
 import datetime, time
 import json
 import re
 
 
 class StockX_Nice_spider():
-    def __init__(self, stockx_sku):
 
-        self.stockx_sku = stockx_sku
+    def __init__(self):
 
-        self.stockx_url = 'https://stockx.com/api/browse?productCategory=sneakers&sort=featured&order=DESC&_search={}&dataType=product'.format(self.stockx_sku)
+        self.redis_client = redis.Redis(host='', port='', db=15, decode_responses=True, password='')
 
-        self.stockX_headers = {
-            'authority': 'stockx.com',
-            'method': 'GET',
-            'path': '/api/browse?productCategory=sneakers&sort=featured&order=DESC&_search={}&dataType=product'.format(self.stockx_sku),
-            'scheme': 'https',
-            'accept': '*/*',
-            'accept-encoding': 'gzip, deflate, br',
-            'accept-language': 'zh-CN,zh;q=0.9,en;q=0.8',
-            'appos': 'web',
-            'appversion': '0.1',
-            'cookie': '__cfduid=d913ad3a0f661753201e8aa96d701220a1565078503; _pxhd=fb78a1cbe18850245c32c59d6859fc9a95dd7da449ee3b6b8a4aa901aa605e6b:6dcc2370-b820-11e9-bd8e-fd84f74899f8; cto_lwid=f677103e-dbb4-4f6a-9eb7-71ce859dc9ae; _ga=GA1.2.1094966298.1565078507; _gid=GA1.2.78797019.1565078507; _sp_ses.1a3e=*; _tl_csid=0199a79c-177d-45bc-a185-1aaaa9c8b0e8; _tl_duuid=a4272710-b8ed-461e-8317-7cff3525c493; _pk_ses.421.1a3e=*; _gcl_au=1.1.1265765900.1565078508; _ALGOLIA=anonymous-ead77991-05c7-414f-9428-e0ccf91749a3; stockx_session=fc0ajyzjbxzg1565078503372; _tl_auid=5d4933ec79802e0019362523; _tl_sid=5d4933ec79802e0019362528; tracker_device=6add66fd-700c-4b41-aafe-2b1040bc4a61; ajs_user_id=null; ajs_group_id=null; ajs_anonymous_id=%22e7f4aa42-1283-4ea1-b1c0-243ab9116536%22; _omappvp=I7KwQ2BM6hsyFy62Mrj81LPkSH4LviDHX9zY2hal37e4uj222bJe48aTOePJEfBIjQy59KrTnYrWi4kYufcQgN9PPWMuqpMH; _fbp=fb.1.1565078510060.112687029; IR_gbd=stockx.com; stockx_seen_bid_new_info=true; rskxRunCookie=0; rCookie=yth6v9mnvoo8n6dk1jy1dtjyzjgjne; stockx_default_sneakers_size=9.5; lastRskxRun=1565081230457; is_gdpr=false; stockx_selected_currency=USD; stockx_selected_locale=US; stockx_product_visits=12; show_all_as_number=false; brand_tiles_version=v1; show_bid_education=v2; show_bid_education_times=1; multi_edit_option=beatLowestAskBy; product_page_v2=watches%2Chandbags; show_watch_modal=false; progress_bar_variant=; IR_9060=1565081432356%7C0%7C1565078510077%7C%7C; IR_PI=721f7830-b820-11e9-965d-42010a246302%7C1565167832356; stockx_homepage=sneakers; cookie_policy_accepted=true; criteo_write_test=ChUIBBINbXlHb29nbGVSdGJJZBgBIAE; _pk_id.421.1a3e=265bb26256e10d01.1565078507.1.1565081474.1565078507.; tl_sopts_0199a79c-177d-45bc-a185-1aaaa9c8b0e8_p_p_l_h=aHR0cHMlM0ElMkYlMkZzdG9ja3guY29tJTJGc2VhcmNoJTJGc25lYWtlcnMlM0ZzJTNEQ0Q2NTc4; tl_sopts_0199a79c-177d-45bc-a185-1aaaa9c8b0e8_p_p_l_t=U3RvY2tYJTNBJTIwQnV5JTIwYW5kJTIwU2VsbCUyMFNuZWFrZXJzJTJDJTIwU3RyZWV0d2VhciUyQyUyMEhhbmRiYWdzJTJDJTIwV2F0Y2hlcw==; tl_sopts_0199a79c-177d-45bc-a185-1aaaa9c8b0e8_p_p_l=JTdCJTIyaHJlZiUyMiUzQSUyMmh0dHBzJTNBJTJGJTJGc3RvY2t4LmNvbSUyRnNlYXJjaCUyRnNuZWFrZXJzJTNGcyUzRENENjU3OCUyMiUyQyUyMmhhc2glMjIlM0ElMjIlMjIlMkMlMjJzZWFyY2glMjIlM0ElMjIlM0ZzJTNEQ0Q2NTc4JTIyJTJDJTIyaG9zdCUyMiUzQSUyMnN0b2NreC5jb20lMjIlMkMlMjJwcm90b2NvbCUyMiUzQSUyMmh0dHBzJTNBJTIyJTJDJTIycGF0aG5hbWUlMjIlM0ElMjIlMkZzZWFyY2glMkZzbmVha2VycyUyMiUyQyUyMnRpdGxlJTIyJTNBJTIyU3RvY2tYJTNBJTIwQnV5JTIwYW5kJTIwU2VsbCUyMFNuZWFrZXJzJTJDJTIwU3RyZWV0d2VhciUyQyUyMEhhbmRiYWdzJTJDJTIwV2F0Y2hlcyUyMiU3RA==; tl_sopts_0199a79c-177d-45bc-a185-1aaaa9c8b0e8_p_p_v_d=MjAxOS0wOC0wNlQwOCUzQTUxJTNBMTQuMTE3Wg==; _sp_id.1a3e=09d2991e-4369-4b01-9107-1e0f6f01d1ad.1565078507.1.1565081475.1565078507.8fc4e013-e441-4309-99a8-5826bbb0a132',
-            'jwt-authorization': 'false',
-            'referer': 'https://stockx.com/search/sneakers?s={}'.format(stockx_sku),
-            'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_13_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/75.0.3770.142 Safari/537.36',
-            'x-anonymous-id': '09d2991e-4369-4b01-9107-1e0f6f01d1ad',
-            'x-requested-with': 'XMLHttpRequest'
+        self.comm_test_conn_du = pymysql.connect(
+            host='',
+            user="",
+            password="",
+            database="",
+            charset='utf8'
+        )
+
+        self.mysql_cur = self.comm_test_conn_du.cursor()
+
+        self.women_dict = {'5W': '35.5', '5.5W': '36', '6W': '36.5', '6.5W': '37.5', '7W': '38', '7.5W': '38.5', '8W': '39', '8.5W': '40', '9W': '40.5', '9.5W': '41', '10W': '42', '10.5W': '42.5', '11W': '43', '11.5W': '44', '12W': '44.5', '12.5W': '45', '13W': '45.5', '13.5W': '46', '14W': '47', '14.5W': '47.5', '15W': '48', '15.5W': '48.5', '16W': '49.5', '16.5W': '50.5', '17W': '51.5', '17.5W': '52.5'}
+
+        self.child_dict = {'1Y': '32', '1.5Y': '33', '2Y': '33.5', '2.5Y': '34', '3Y': '35', '3.5Y': '35.5', '4Y': '36', '4.5Y': '36.5', '5Y': '37.5', '5.5Y': '38', '6Y': '38.5', '6.5Y': '39', '7Y': '40'}
+
+        self.men_dict = {'3.5': '35.5', '4': '36', '4.5': '36.5', '5': '37.5', '5.5': '38', '6': '38.5', '6.5': '39', '7': '40', '7.5': '40.5', '8': '41', '8.5': '42', '9': '42.5', '9.5': '43', '10': '44', '10.5': '44.5', '11': '45', '11.5': '45.5', '12': '46', '12.5': '47', '13': '47.5', '13.5': '48', '14': '48.5', '15': '49.5', '16': '50.5', '17': '51.5', '18': '52.5'}
+
+        self.exchange_rate_url = "https://api.jijinhao.com/plus/convert.htm?from_tkc=USD&to_tkc=CNY&amount=1&"
+
+    def Get_stockx_prodect_detal(self, detal_page_url, stockX_headers, stockx_sku, proxy_list):
+
+        bijia_conn_du = pymysql.connect(
+            host='',
+            user="",
+            password="",
+            database="",
+            charset=''
+        )
+
+        comm_test_cur = bijia_conn_du.cursor()
+
+        rate_reql = requests.get(self.exchange_rate_url)
+
+        rate_reql.encoding = "utf-8"
+
+        rate = float(re.findall("result = '(.*?)'", rate_reql.text)[0])
+
+        now_time = datetime.datetime.now()
+        dt_minus1day = (now_time + datetime.timedelta(days=-1)).strftime('%Y-%m-%d')
+        dt_minus1day1 = (now_time + datetime.timedelta(days=-0)).strftime('%Y-%m-%d')
+
+        proxy = random.choice(proxy_list)
+        retry_flag = True
+        retry_num = 10
+        while retry_flag:
+
+            try:
+                reql = requests.get(detal_page_url, proxies=proxy, timeout=(2, 5), headers=stockX_headers)
+
+                detal_page_information = json.loads(reql.text)
+
+                children_dict = detal_page_information['Product']['children']
+                product_masgion_list = []
+                for i, j in children_dict.items():
+                    information_dict = {}
+
+                    information_dict['sku'] = stockx_sku
+
+                    if 'W' in children_dict[i]['shoeSize'] and children_dict[i]['shoeSize'] in self.women_dict:
+                        information_dict['size'] = self.women_dict[children_dict[i]['shoeSize']]
+
+                    elif 'Y' in children_dict[i]['shoeSize'] and children_dict[i]['shoeSize'] in self.child_dict:
+                        information_dict['size'] = self.child_dict[children_dict[i]['shoeSize']]
+
+                    elif children_dict[i]['shoeSize'] in self.men_dict:
+                        information_dict['size'] = self.men_dict[children_dict[i]['shoeSize']]  # 鞋码
+
+                    else:
+                        information_dict['size'] = children_dict[i]['shoeSize']
+
+                    if "lastSale" in children_dict[i]['market']:
+                        if children_dict[i]['market']['lastSale'] !=0:
+                            information_dict['price'] = str(round(int(children_dict[i]['market']['lastSale']) * rate, 0) + 350)  # 最后报价
+                        else:
+                            information_dict['price'] = '0'
+                    else:
+                        information_dict['price'] = '0'
+
+                    if "lowestAsk" in children_dict[i]['market']:
+                        if children_dict[i]['market']['lowestAsk'] != 0:
+                            information_dict['lowestAsk'] = str(round(int(children_dict[i]['market']['lowestAsk']) * rate, 0) + 350)  # 最低售价
+                        else:
+                            information_dict['lowestAsk'] = '0'
+                    else:
+                        information_dict['lowestAsk'] = 0
+
+                    if "highestBid" in children_dict[i]['market']:
+                        if children_dict[i]['market']['highestBid'] != 0:
+                            information_dict['highestBid'] = str(round(int(children_dict[i]['market']['highestBid']) * rate, 0) + 350)  # 最高出价
+                        else:
+                            information_dict['highestBid'] = '0'
+                    else:
+                        information_dict['highestBid'] = 0
+
+                    if "deadstockSold" in children_dict[i]['market']:
+                        information_dict['deadstockSold'] = children_dict[i]['market']['deadstockSold']  # 销售量
+                    else:
+                        information_dict['deadstockSold'] = 0
+
+                    yestoday_redis_key = '{},{},{},{},2'.format(dt_minus1day, stockx_sku, 'stockX', information_dict['size'])
+                    today_redis_key = '{},{},{},{},2'.format(dt_minus1day1, stockx_sku, 'stockX', information_dict['size'])
+
+                    yestoday_redis_values = self.redis_client.hget('Price_comparison', yestoday_redis_key)
+
+                    if yestoday_redis_values:
+                        information_dict['yesterdaylowestprice'] = yestoday_redis_values
+                    else:
+                        information_dict['yesterdaylowestprice'] = '0'
+
+                    information_dict['aseriesof'] = "sneakers"
+
+                    today_redis_values = self.redis_client.hget('Price_comparison', today_redis_key)
+
+                    if today_redis_values is None or information_dict['price'] < today_redis_values:
+                        self.redis_client.hset('Price_comparison', today_redis_key, information_dict['price'])
+
+                    information_dict['desc'] = "现货"
+
+                    information_dict['platform'] = 'stockX'
+
+                    self.redis_client.hset('bijia', '{},{},{},2'.format(stockx_sku, 'stockX', information_dict['size']), str(information_dict))
+
+                    product_masgion_list.append(information_dict)
+
+                sql = """"""
+                try:
+                    comm_test_cur.execute(sql)
+                    bijia_conn_du.commit()
+                    comm_test_cur.close()
+                    bijia_conn_du.close()
+
+                except Exception as E:
+                    print(sql)
+                    print("插入失败：{}".format(E), stockx_sku)
+
+                retry_flag = False
+
+            except Exception as E:
+
+                print("详情查询出错{}".format(E))
+                if retry_num > 0:
+                    retry_num -= 1
+                    proxy = random.choice(proxy_list)
+                    continue
+                else:
+                    break
+
+
+
+
+
+    def StockxHtml(self, stockx_url, stockX_headers, stockx_sku, proxy_list):
+
+        proxy = random.choice(proxy_list)
+        retry_flag = True
+        retry_num = 10
+
+        while retry_flag:
+
+            try:
+                time.sleep(2)
+                reql = requests.get(stockx_url, proxies=proxy, headers=stockX_headers, timeout=(2, 5))
+
+                stockx_json = json.loads(reql.text)
+                if len(stockx_json['hits']) != 0:
+                    asdfs = True
+
+
+                    for i in stockx_json['hits']:
+
+                        stockx_shoe_sku = str(i['style_id']).strip().replace(' ', '-')
+
+                        stock_flag = False
+                        if stockx_shoe_sku == stockx_sku:
+                            stock_flag = True
+                        elif stockx_shoe_sku.upper() == stockx_sku:
+                            stock_flag = True
+                        elif stockx_shoe_sku.lower() == stockx_sku:
+                            stock_flag = True
+
+                        if stock_flag:
+
+                            asdfs = False
+                            detal_page_url = 'https://gateway.stockx.com/api/v2/products/{}?includes=market,360&currency=USD'.format(i['objectID'])
+
+                            deail_headers = {
+                                "method": "GET",
+                                "scheme": "https",
+                                "path": "/api/v2/products/{}?includes=market,360&currency=USD".format(i['objectID']),
+                                "authority": "gateway.stockx.com",
+                                "x-anonymous-id": "4f0789bd-bff5-4ab4-9b8a-21c585254bc0",
+                                "accept": "*/*",
+                                "app-version": "4.0.5.23735",
+                                "app-platform": "ios",
+                                "app-name": "StockX-iOS",
+                                "jwt-authorization": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJzdG9ja3guY29tIiwic3ViIjoic3RvY2t4LmNvbSIsImF1ZCI6IndlYiIsImFwcF9uYW1lIjoiaW9zIiwiYXBwX3ZlcnNpb24iOiI0LjAuNS4yMzczNSIsImlzc3VlZF9hdCI6IjIwMTktMDgtMjkgMDQ6MTk6MzIiLCJjdXN0b21lcl9pZCI6bnVsbCwiZW1haWwiOm51bGwsImN1c3RvbWVyX3V1aWQiOm51bGwsImZpcnN0TmFtZSI6bnVsbCwibGFzdE5hbWUiOm51bGwsImdkcHJfc3RhdHVzIjpudWxsLCJkZWZhdWx0X2N1cnJlbmN5IjoiVVNEIiwibGFuZ3VhZ2UiOiJlbi1VUyIsInNoaXBfYnlfZGF0ZSI6bnVsbCwidmFjYXRpb25fZGF0ZSI6bnVsbCwicHJvZHVjdF9jYXRlZ29yeSI6InNuZWFrZXJzIiwiaXNfYWRtaW4iOm51bGwsInNlc3Npb25faWQiOiIxMzE0NTM3MDY0Mzg4MTgwMDg4MyIsImV4cCI6MTU2NzY1NzE3MiwiYXBpX2tleXMiOm51bGx9.hWSIkP8_XAW5J6cIvpiiTwSJwvdnlkOoZB_d_pPbcgs",
+                                "x-api-key": "99WtRZK6pS1Fqt8hXBfWq8BYQjErmwipa3a0hYxX",
+                                "accept-language": "en-US",
+                                "accept-encoding": "br, gzip, deflate",
+                                "user-agent": "StockX/23735 CFNetwork/978.0.7 Darwin/18.6.0",
+                                "cookie": "_pxhd=c0b39506451d309ff8db901d40782f7acd222f68b3bcb51bc6901e6e5452802a:5d701ee1-ca0f-11e9-a6a5-17af9d801013; __cfduid=d7facef0e5fe658ba57a7e1ace774b5011567050295",
+
+                            }
+
+                            self.Get_stockx_prodect_detal(detal_page_url, deail_headers, stockx_sku, proxy_list)
+
+                    if asdfs:
+                        print("没有相等的：", stockx_sku)
+
+                else:
+                    print("没有搜到: ", stockx_sku)
+
+                retry_flag = False
+
+            except Exception as E:
+                print("搜索出错：{}".format(E), stockx_sku)
+                if retry_num > 0:
+                    retry_num -= 1
+                    proxy = random.choice(proxy_list)
+                    continue
+                else:
+                    break
+
+
+
+
+
+
+    def executeSql(self, sql):
+        try:
+            self.mysql_cur.execute(sql)
+
+            sku_tuples = self.mysql_cur.fetchall()
+
+            sku_list = [i[0] for i in sku_tuples]
+
+            return sku_list
+
+        except Exception as E:
+            print(E)
+
+
+
+
+    def process(self, parameter):
+
+        proxy_dict = self.redis_client.hgetall("proxy")
+
+        proxy_list = []
+        for key, val in proxy_dict.items():
+            one_dict = {}
+            one_dict["HTTPS"] = val
+            proxy_list.append(one_dict)
+
+        stockx_sku = parameter.strip()
+
+        stockx_url = 'https://gateway.stockx.com/api/v2/search?facets=%5B%22product_category%22%5D&page=0&query={}&currency=USD'.format(stockx_sku)
+
+        stockX_headers = {
+            "method": "GET",
+            "scheme": "https",
+            "path": "/api/v2/search?facets=%5B%22product_category%22%5D&page=0&query={}&currency=USD".format(stockx_sku),
+            "authority": "gateway.stockx.com",
+            "x-anonymous-id": "4f0789bd-bff5-4ab4-9b8a-21c585254bc0",
+            "accept": "*/*",
+            "app-version": "4.0.5.23735",
+            "app-platform": "ios",
+            "app-name": "StockX-iOS",
+            "jwt-authorization": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJzdG9ja3guY29tIiwic3ViIjoic3RvY2t4LmNvbSIsImF1ZCI6IndlYiIsImFwcF9uYW1lIjoiaW9zIiwiYXBwX3ZlcnNpb24iOiI0LjAuNS4yMzczNSIsImlzc3VlZF9hdCI6IjIwMTktMDgtMjkgMDM6NDQ6NTUiLCJjdXN0b21lcl9pZCI6bnVsbCwiZW1haWwiOm51bGwsImN1c3RvbWVyX3V1aWQiOm51bGwsImZpcnN0TmFtZSI6bnVsbCwibGFzdE5hbWUiOm51bGwsImdkcHJfc3RhdHVzIjpudWxsLCJkZWZhdWx0X2N1cnJlbmN5IjoiVVNEIiwibGFuZ3VhZ2UiOiJlbi1VUyIsInNoaXBfYnlfZGF0ZSI6bnVsbCwidmFjYXRpb25fZGF0ZSI6bnVsbCwicHJvZHVjdF9jYXRlZ29yeSI6InNuZWFrZXJzIiwiaXNfYWRtaW4iOm51bGwsInNlc3Npb25faWQiOiIxMzE0NTM3MDY0Mzg4MTgwMDg4MyIsImV4cCI6MTU2NzY1NTA5NSwiYXBpX2tleXMiOm51bGx9.nNk34OIP7DJIuJ3CyDqfXY9-s4sJqInXfyNjVEZlz4w",
+            "x-api-key": "99WtRZK6pS1Fqt8hXBfWq8BYQjErmwipa3a0hYxX",
+            "accept-language": "en-US",
+            "accept-encoding": "br, gzip, deflate",
+            "user-agent": "StockX/23735 CFNetwork/978.0.7 Darwin/18.6.0",
+            "cookie": "_pxhd=c0b39506451d309ff8db901d40782f7acd222f68b3bcb51bc6901e6e5452802a:5d701ee1-ca0f-11e9-a6a5-17af9d801013; __cfduid=d7facef0e5fe658ba57a7e1ace774b5011567050295"
         }
 
-
-
-    def Get_stockx_prodect_detal(self, detal_page_url):
-
-        reql = requests.get(detal_page_url, headers=self.stockX_headers)
-
-        detal_page_information = json.loads(reql.text)
-
-        children_dict = detal_page_information['Product']['children']
-
-        for i, j in children_dict.items():
-            information_dict = {}
-            information_dict['size'] = children_dict[i]['market']['lastSaleSize']                                                   #鞋码
-            information_dict['lastSale'] = children_dict[i]['market']['lastSale']                                                   #最后报价
-            information_dict['lowestAsk'] = children_dict[i]['market']['lowestAsk']                                             #最低售价
-            information_dict['deadstockSold'] = children_dict[i]['market']['deadstockSold']                                     #销售量
-
-            with open('StockXdata.json', 'a') as f:
-                f.write(json.dumps(information_dict))
+        self.StockxHtml(stockx_url, stockX_headers, stockx_sku, proxy_list)
 
 
 
 
-    def StockxHtml(self):
-        reql = requests.get(self.stockx_url, headers=self.stockX_headers)
 
-        stockx_json = json.loads(reql.text)
+    def main(self):
 
-        if len(stockx_json['Products']) != 0:
-            for i in stockx_json['Products']:
-                if i['styleId'] == self.stockx_sku:
-                    detal_page_url = 'https://stockx.com/api/products/' + str(i['shortDescription']) + '?includes=market,360&currency=USD'
+        sql = ""
 
-                    self.Get_stockx_prodect_detal(detal_page_url)
+        sku_list = self.executeSql(sql)
+
+        pool = ThreadPool(10)
+
+        print("****************************************开始执行for循环多线程函数****************************************")
+        pool.map(self.process, sku_list)
+        pool.close()
+        pool.join()
+
+
+        self.mysql_cur.close()
+        self.comm_test_conn_du.close()
+
+
 
 
 
 if __name__=="__main__":
-    StockX_Nice_spiders = StockX_Nice_spider('CD6578-006')
-    StockX_Nice_spiders.StockxHtml()
+    print(datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+    startTime = time.time()
+    StockX_Nice_spiders = StockX_Nice_spider()
+    StockX_Nice_spiders.main()
+
+    print("用时{}分钟".format(round((time.time() - startTime) / 60, 2)))
+
+
+
